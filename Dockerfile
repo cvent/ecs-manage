@@ -30,7 +30,7 @@ COPY ./src ./src
 RUN cargo build --release
 
 FROM alpine:latest as certs
-RUN apk --update add ca-certificates
+RUN apk --no-cache add ca-certificates
 
 # Create a new stage with a minimal image
 # because we already have a binary built
