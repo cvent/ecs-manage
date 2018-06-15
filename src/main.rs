@@ -149,7 +149,7 @@ fn describe_services<P: ProvideAwsCredentials + 'static>(client: &EcsClient<P, R
 fn create_service<P: ProvideAwsCredentials + 'static>(client: &EcsClient<P, RequestDispatcher>, cluster: String, from_service: Service, role_suffix: Option<String>) -> Result<Service, Error> {
     let role = if from_service.load_balancers.clone().map_or(false, |l| !l.is_empty()) {
         if from_service.network_configuration.clone().map_or(false, |n| n.awsvpc_configuration.is_some()) {
-            // clamav service was using awsvpc so required special handling in ct50 region
+            // Handle awsvpc services specially
             Some(String::from("aws-service-role/ecs.amazonaws.com/AWSServiceRoleForECS"))
         } else {
             Some(format!("{}-{}", cluster, role_suffix.unwrap_or(String::from("ECSServiceRole"))))
