@@ -4,12 +4,14 @@ extern crate rusoto_core;
 extern crate rusoto_ecs;
 #[macro_use]
 extern crate failure;
+extern crate tokio_core;
 
 use failure::Error;
 use structopt::StructOpt;
 use rusoto_core::reactor::RequestDispatcher;
-use rusoto_core::{ProfileProvider, ProvideAwsCredentials};
+use rusoto_core::{ChainProvider, ProfileProvider, ProvideAwsCredentials};
 use rusoto_ecs::{Ecs, EcsClient, ListServicesRequest, DescribeServicesRequest, Service, CreateServiceRequest};
+use tokio_core::reactor::Core;
 
 use std::thread;
 use std::time::Duration;
@@ -48,12 +50,15 @@ enum EcsCommand {
 fn main() -> Result<(), Error> {
     let args = Args::from_args();
 
-    let mut profile_provider = ProfileProvider::new()?;
-    profile_provider.set_profile(args.profile);
+    let core = Core::new()?;
 
     let client = EcsClient::new(
         RequestDispatcher::default(),
-        profile_provider,
+        ChainProvider::with_profile_provider(&core.handle(), {
+            let mut p = ProfileProvider::new()?;
+            p.set_profile(args.profile);
+            p
+        }),
         args.region.parse()?
     );
 
