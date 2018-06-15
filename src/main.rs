@@ -20,7 +20,7 @@ use std::time::Duration;
 #[structopt()]
 struct Args {
     #[structopt(long = "profile")]
-    profile: String,
+    profile: Option<String>,
     #[structopt(long = "region")]
     region: String,
     #[structopt(subcommand)]
@@ -52,13 +52,18 @@ fn main() -> Result<(), Error> {
 
     let core = Core::new()?;
 
-    let client = EcsClient::new(
-        RequestDispatcher::default(),
-        ChainProvider::with_profile_provider(&core.handle(), {
+    let credentials_provider = match args.profile {
+        Some(profile) => ChainProvider::with_profile_provider(&core.handle(), {
             let mut p = ProfileProvider::new()?;
-            p.set_profile(args.profile);
+            p.set_profile(profile);
             p
         }),
+        None => ChainProvider::new(&core.handle())
+    };
+
+    let client = EcsClient::new(
+        RequestDispatcher::default(),
+        credentials_provider,
         args.region.parse()?
     );
 
