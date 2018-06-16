@@ -37,8 +37,8 @@ RUN apk --no-cache add ca-certificates
 FROM scratch
 
 # Copies standard SSL certs from the "build" stage
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
-COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-bundle.crt
 
 # Copies the binary from the "build" stage
 COPY --from=build /app/target/x86_64-unknown-linux-musl/release/ecs-manage /bin/
