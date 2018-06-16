@@ -99,7 +99,6 @@ fn main() -> Result<(), Error> {
             let source_only = source_services.into_iter().filter(|s| !destination_names.contains(&s.service_name));
 
             for source_service in source_only {
-                println!("Creating {:?} in {}", source_service.service_name, destination_cluster);
                 create_service(&client, destination_cluster.clone(), source_service, role_suffix.clone())?;
             }
         }
@@ -157,19 +156,19 @@ fn describe_services<P: ProvideAwsCredentials + 'static>(client: &EcsClient<P, R
 }
 
 fn create_service<P: ProvideAwsCredentials + 'static>(client: &EcsClient<P, RequestDispatcher>, cluster: String, from_service: Service, role_suffix: Option<String>) -> Result<Service, Error> {
-    let role = if from_service.load_balancers.clone().map_or(false, |l| !l.is_empty()) {
-        if from_service.network_configuration.clone().map_or(false, |n| n.awsvpc_configuration.is_some()) {
-            // Handle awsvpc services specially
-            Some(String::from("aws-service-role/ecs.amazonaws.com/AWSServiceRoleForECS"))
-        } else {
-            Some(format!("{}-{}", cluster, role_suffix.unwrap_or(String::from("ECSServiceRole"))))
-        }
+    let has_loadbalancer = from_service.load_balancers.clone().map_or(false, |l| !l.is_empty());
+    let is_awsvpc = from_service.network_configuration.clone().map_or(false, |n| n.awsvpc_configuration.is_some());
+
+    let role = if has_loadbalancer && !is_awsvpc {
+        Some(format!("{}-{}", cluster, role_suffix.unwrap_or(String::from("ECSServiceRole"))))
     } else {
         None
     };
 
     match from_service.clone().service_name {
         Some(service_name) => {
+            println!("Creating {} in {} with the following role: {:?}", service_name, cluster, role);
+
             let res = client.create_service(&CreateServiceRequest {
                 client_token: None,
                 cluster: Some(cluster),
