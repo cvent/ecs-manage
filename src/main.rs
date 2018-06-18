@@ -3,6 +3,7 @@ extern crate structopt;
 extern crate rusoto_core;
 extern crate rusoto_ecr;
 extern crate rusoto_ecs;
+extern crate rusoto_elbv2;
 #[macro_use]
 extern crate failure;
 extern crate backoff;
@@ -21,6 +22,9 @@ use rusoto_ecs::{
     CreateServiceRequest, DescribeServicesError, DescribeServicesRequest,
     DescribeTaskDefinitionError, DescribeTaskDefinitionRequest, Ecs, EcsClient, ListServicesError,
     ListServicesRequest, Service,
+};
+use rusoto_elbv2::{
+    DescribeTargetGroupsError, DescribeTargetGroupsInput, Elb, ElbClient, TargetGroup,
 };
 use structopt::StructOpt;
 use tokio_core::reactor::Core;
@@ -87,7 +91,13 @@ fn main() -> Result<(), Error> {
 
     let ecr_client = EcrClient::new(
         RequestDispatcher::default(),
-        credentials_provider,
+        credentials_provider.clone(),
+        args.region.parse()?,
+    );
+
+    let elb_client = ElbClient::new(
+        RequestDispatcher::default(),
+        credentials_provider.clone(),
         args.region.parse()?,
     );
 
@@ -103,18 +113,40 @@ fn main() -> Result<(), Error> {
             }
         }
         EcsCommand::Audit { cluster } => {
-            let no_ecr_images = describe_services(&ecs_client, cluster)?
-                .into_iter()
-                .filter(|s| {
-                    ecr_images(&ecs_client, &ecr_client, s.clone())
-                        .unwrap_or_default()
-                        .iter()
-                        .any(|image| image.is_err())
-                });
+            let services = describe_services(&ecs_client, cluster.clone())?;
 
-            println!("Services without ECR images:");
-            for service in no_ecr_images {
-                if let Some(service_name) = service.service_name {
+            let invalid_ecr_images = services
+                .iter()
+                .map(|s| {
+                    (
+                        s.clone(),
+                        service_ecr_images(&ecs_client, &ecr_client, s).unwrap_or_default(),
+                    )
+                })
+                .filter(|s| s.1.iter().any(|image| image.is_err()));
+
+            let invalid_target_groups = services
+                .iter()
+                .map(|s| {
+                    (
+                        s.clone(),
+                        service_target_groups(&elb_client, s).unwrap_or_default(),
+                    )
+                })
+                .filter(|s| s.1.iter().any(|target_group| target_group.is_err()));
+
+            println!("Services with invalid ECR images:");
+            println!("=================================");
+            for service in invalid_ecr_images {
+                if let Some(service_name) = service.0.service_name {
+                    println!("{}", service_name);
+                }
+            }
+
+            println!("Services with invalid target groups");
+            println!("===================================");
+            for service in invalid_target_groups {
+                if let Some(service_name) = service.0.service_name {
                     println!("{}", service_name);
                 }
             }
@@ -322,13 +354,13 @@ fn create_service<P: ProvideAwsCredentials + 'static>(
     }
 }
 
-fn ecr_images<P: ProvideAwsCredentials + 'static>(
+fn service_ecr_images<P: ProvideAwsCredentials + 'static>(
     ecs_client: &EcsClient<P, RequestDispatcher>,
     ecr_client: &EcrClient<P, RequestDispatcher>,
-    service: Service,
+    service: &Service,
 ) -> Result<Vec<Result<ImageDetail, Error>>, Error> {
     match service.task_definition {
-        Some(task_definition) => {
+        Some(ref task_definition) => {
             let task_definition = retry_log(format!("describing {}", task_definition), || {
                 ecs_client
                     .describe_task_definition(&DescribeTaskDefinitionRequest {
@@ -417,6 +449,69 @@ fn ecr_images<P: ProvideAwsCredentials + 'static>(
     }
 }
 
+fn service_target_groups<P: ProvideAwsCredentials + 'static>(
+    elb_client: &ElbClient<P, RequestDispatcher>,
+    service: &Service,
+) -> Result<Vec<Result<TargetGroup, Error>>, Error> {
+    match service.load_balancers {
+        Some(ref load_balancers) => {
+            let mut target_groups = Vec::new();
+
+            for target_group_arn in load_balancers.iter().map(|lb| lb.target_group_arn.clone()) {
+                match target_group_arn {
+                    Some(target_group_arn) => {
+                        let target_groups_res =
+                            retry_log(format!("describing {}", target_group_arn), || {
+                                elb_client
+                                    .describe_target_groups(&DescribeTargetGroupsInput {
+                                        load_balancer_arn: None,
+                                        marker: None,
+                                        names: None,
+                                        page_size: None,
+                                        target_group_arns: Some(vec![target_group_arn.clone()]),
+                                    })
+                                    .sync()
+                                    .map_err(|e| match e {
+                                        DescribeTargetGroupsError::Unknown(s) => {
+                                            if s.contains("<Code>Throttling</Code>") {
+                                                backoff::Error::Transient(
+                                                    DescribeTargetGroupsError::Unknown(s),
+                                                )
+                                            } else {
+                                                backoff::Error::Permanent(
+                                                    DescribeTargetGroupsError::Unknown(s),
+                                                )
+                                            }
+                                        }
+                                        _ => backoff::Error::Permanent(e),
+                                    })
+                            });
+
+                        match target_groups_res {
+                            Ok(target_groups_res) => match target_groups_res.target_groups {
+                                Some(mut target_group_details) => {
+                                    match target_group_details.pop() {
+                                        Some(target_group_detail) => {
+                                            target_groups.push(Ok(target_group_detail));
+                                        }
+                                        None => {}
+                                    }
+                                }
+                                None => {}
+                            },
+                            Err(e) => target_groups.push(Err(e.into())),
+                        }
+                    }
+                    None => {}
+                }
+            }
+
+            Ok(target_groups)
+        }
+        None => Ok(Vec::new()),
+    }
+}
+
 fn retry_log<S, T, E, F>(msg: S, mut op: F) -> Result<T, backoff::Error<E>>
 where
     S: Display,
@@ -424,6 +519,6 @@ where
     F: FnMut() -> Result<T, backoff::Error<E>>,
 {
     op.retry_notify(&mut ExponentialBackoff::default(), |err, _| {
-        warn!("{} failed due to {}. Retrying", msg, err);
+        info!("{} failed due to {}. Retrying", msg, err);
     })
 }
