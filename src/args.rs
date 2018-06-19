@@ -40,7 +40,7 @@ pub enum ServicesCommand {
         source_cluster: String,
         destination_cluster: String,
     },
-    /// Deploy services in source_cluster into destination_cluster
+    /// Deploy healthy services in source_cluster into destination_cluster
     #[structopt(name = "sync")]
     Sync {
         source_cluster: String,

@@ -131,7 +131,7 @@ pub fn create_service<P: ProvideAwsCredentials + 'static>(
     cluster: String,
     from_service: Service,
     role_suffix: Option<String>,
-) -> Result<Service, Error> {
+) -> Result<Option<Service>, Error> {
     let has_loadbalancer = from_service
         .load_balancers
         .clone()
@@ -158,32 +158,47 @@ pub fn create_service<P: ProvideAwsCredentials + 'static>(
         cluster, service_name, role
     );
 
-    ecs_client
+    let desired_count = from_service.clone().desired_count.ok_or(format_err!(
+        "No desired count found for {:?}",
+        &service_name
+    ))?;
+
+    let task_definition = from_service.clone().task_definition.ok_or(format_err!(
+        "No task definition found for {}",
+        &service_name
+    ))?;
+
+    let response = ecs_client
         .create_service(&CreateServiceRequest {
             client_token: None,
-            cluster: Some(cluster),
-            deployment_configuration: from_service.deployment_configuration,
-            desired_count: from_service.desired_count.ok_or(format_err!(
-                "No desired count found for {:?}",
-                &service_name
-            ))?,
+            cluster: Some(cluster.clone()),
+            deployment_configuration: from_service.deployment_configuration.clone(),
+            desired_count,
             health_check_grace_period_seconds: from_service.health_check_grace_period_seconds,
-            launch_type: from_service.launch_type,
-            load_balancers: from_service.load_balancers,
-            network_configuration: from_service.network_configuration,
-            placement_constraints: from_service.placement_constraints,
-            placement_strategy: from_service.placement_strategy,
-            platform_version: from_service.platform_version,
+            launch_type: from_service.launch_type.clone(),
+            load_balancers: from_service.load_balancers.clone(),
+            network_configuration: from_service.network_configuration.clone(),
+            placement_constraints: from_service.placement_constraints.clone(),
+            placement_strategy: from_service.placement_strategy.clone(),
+            platform_version: from_service.platform_version.clone(),
             role: role.clone(),
             service_name: service_name.clone(),
-            task_definition: from_service.task_definition.ok_or(format_err!(
-                "No task definition found for {}",
-                &service_name
-            ))?,
+            task_definition: task_definition.clone(),
         })
-        .sync()?
-        .service
-        .ok_or(format_err!("Tried to create service, but nothing returned"))
+        .sync();
+
+    match response {
+        Ok(response) => {
+            let service = response
+                .service
+                .ok_or(format_err!("Tried to create service, but nothing returned"))?;
+            Ok(Some(service))
+        }
+        Err(e) => {
+            error!("Failed to create {}, due to {:?}", service_name, e);
+            Ok(None)
+        }
+    }
 }
 
 pub fn update_service<P: ProvideAwsCredentials + 'static>(
@@ -239,6 +254,25 @@ pub fn update_service<P: ProvideAwsCredentials + 'static>(
         },
     )?.service
         .ok_or(format_err!("Tried to update service, but nothing returned"))
+}
+
+pub fn audit_service<P: ProvideAwsCredentials + 'static>(
+    ecs_client: &EcsClient<P, RequestDispatcher>,
+    ecr_client: &EcrClient<P, RequestDispatcher>,
+    elb_client: &ElbClient<P, RequestDispatcher>,
+    service: &Service,
+) -> Result<Vec<String>, Error> {
+    let audit = hashmap![
+        "Invalid ECR images" => service_ecr_images(&ecs_client, &ecr_client, &service)?.iter().any(|r| r.is_err()),
+        "Invalid Target groups" => service_target_groups(&elb_client, &service)?.iter().any(|r| r.is_err()),
+        "Less than desired" => service.running_count.unwrap_or(0) < service.desired_count.unwrap_or(0)
+    ];
+
+    Ok(audit
+        .into_iter()
+        .filter(|(_, v)| *v)
+        .map(|(k, _)| String::from(k))
+        .collect::<Vec<String>>())
 }
 
 pub fn service_ecr_images<P: ProvideAwsCredentials + 'static>(

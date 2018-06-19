@@ -20,7 +20,6 @@ mod helpers;
 mod services;
 
 use failure::Error;
-use itertools::Itertools;
 use loggerv::Logger;
 use rusoto_core::reactor::RequestDispatcher;
 use rusoto_core::{ChainProvider, ProfileProvider};
@@ -99,16 +98,9 @@ fn main() -> Result<(), Error> {
         } => for service in services::describe_services(&ecs_client, cluster)? {
             let service_name = services::service_name(&service)?;
 
-            let audit = hashmap![
-                "ECR images" => services::service_ecr_images(&ecs_client, &ecr_client, &service)?.iter().any(|r| r.is_err()),
-                "Target Groups" => services::service_target_groups(&elb_client, &service)?.iter().any(|r| r.is_err()),
-            ];
-
-            let audit_message = audit
-                .into_iter()
-                .filter(|(_, v)| *v)
-                .map(|(k, _)| format!("Invalid {}", k))
-                .join(", ");
+            let audit_message =
+                services::audit_service(&ecs_client, &ecr_client, &elb_client, &service)?
+                    .join(", ");
 
             if !audit_message.is_empty() {
                 println!("{} [{}]", service_name, audit_message);
@@ -149,12 +141,16 @@ fn main() -> Result<(), Error> {
             )?;
 
             for source_service in source_only_services {
-                services::create_service(
-                    &ecs_client,
-                    destination_cluster.clone(),
-                    source_service,
-                    role_suffix.clone(),
-                )?;
+                if services::audit_service(&ecs_client, &ecr_client, &elb_client, &source_service)?
+                    .is_empty()
+                {
+                    services::create_service(
+                        &ecs_client,
+                        destination_cluster.clone(),
+                        source_service,
+                        role_suffix.clone(),
+                    )?;
+                }
             }
         }
         ServicesCommand {
