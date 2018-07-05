@@ -10,7 +10,7 @@ extern crate backoff;
 extern crate tokio_core;
 #[macro_use]
 extern crate log;
-extern crate loggerv;
+extern crate stderrlog;
 #[macro_use]
 extern crate maplit;
 extern crate itertools;
@@ -20,16 +20,15 @@ mod helpers;
 mod services;
 
 use failure::Error;
-use loggerv::Logger;
 use rusoto_core::reactor::RequestDispatcher;
 use rusoto_core::{ChainProvider, ProfileProvider};
 use rusoto_ecr::EcrClient;
 use rusoto_ecs::EcsClient;
 use rusoto_elbv2::ElbClient;
+use std::thread;
+use std::time::Duration;
 use structopt::StructOpt;
 use tokio_core::reactor::Core;
-use std::time::Duration;
-use std::thread;
 
 use args::Args;
 use args::EcsCommand::*;
@@ -38,10 +37,9 @@ use args::ServicesCommand::*;
 fn main() -> Result<(), Error> {
     let args = Args::from_args();
 
-    Logger::new()
-        .verbosity(args.verbosity)
-        .level(true)
-        .module_path(true)
+    stderrlog::new()
+        .module(module_path!())
+        .verbosity(args.verbosity + 2)
         .init()?;
 
     let credentials_provider = {
@@ -49,6 +47,7 @@ fn main() -> Result<(), Error> {
         match args.profile {
             Some(profile) => ChainProvider::with_profile_provider(&core.handle(), {
                 let mut p = ProfileProvider::new()?;
+                debug!("Setting profile to {}", profile);
                 p.set_profile(profile);
                 p
             }),
@@ -146,7 +145,8 @@ fn main() -> Result<(), Error> {
                 if services::audit_service(&ecs_client, &ecr_client, &elb_client, &source_service)?
                     .is_empty()
                 {
-                    thread::sleep(Duration::from_millis(4000))
+                    thread::sleep(Duration::from_millis(4000));
+
                     services::create_service(
                         &ecs_client,
                         destination_cluster.clone(),
