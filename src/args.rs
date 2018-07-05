@@ -9,7 +9,7 @@ pub struct Args {
     pub region: String,
     /// Sets the level of verbosity
     #[structopt(short = "v", long = "verbose", parse(from_occurrences), raw(global = "true"))]
-    pub verbosity: u64,
+    pub verbosity: usize,
     /// Sub commands
     #[structopt(subcommand)]
     pub command: EcsCommand,
