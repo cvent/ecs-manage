@@ -146,7 +146,7 @@ fn main() -> Result<(), Error> {
                 if services::audit_service(&ecs_client, &ecr_client, &elb_client, &source_service)?
                     .is_empty()
                 {
-                    thread::sleep(Duration::from_millis(4000))
+                    thread::sleep(Duration::from_millis(4000));
                     services::create_service(
                         &ecs_client,
                         destination_cluster.clone(),
