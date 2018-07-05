@@ -28,6 +28,8 @@ use rusoto_ecs::EcsClient;
 use rusoto_elbv2::ElbClient;
 use structopt::StructOpt;
 use tokio_core::reactor::Core;
+use std::time::Duration;
+use std::thread;
 
 use args::Args;
 use args::EcsCommand::*;
@@ -144,6 +146,7 @@ fn main() -> Result<(), Error> {
                 if services::audit_service(&ecs_client, &ecr_client, &elb_client, &source_service)?
                     .is_empty()
                 {
+                    thread::sleep(Duration::from_millis(4000))
                     services::create_service(
                         &ecs_client,
                         destination_cluster.clone(),
