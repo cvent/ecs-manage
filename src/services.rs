@@ -316,11 +316,15 @@ pub fn service_ecr_images<P: ProvideAwsCredentials + 'static>(
                                     match image_arn.split('/').collect::<Vec<&str>>().pop() {
                                         Some(repo_image) => {
                                             let split_repo_image =
-                                                repo_image.split(':').collect::<Vec<&str>>();
+                                                repo_image.splitn(2, ':').collect::<Vec<&str>>();
 
                                             let image_id = ImageIdentifier {
                                                 image_digest: None,
-                                                image_tag: Some(split_repo_image[1].to_string()),
+                                                image_tag: Some(if split_repo_image.len() == 2 {
+                                                    split_repo_image[1].to_string()
+                                                } else {
+                                                    String::from("latest")
+                                                }),
                                             };
 
                                             let mut image_details_res = ecr_client
