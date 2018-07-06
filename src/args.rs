@@ -1,12 +1,11 @@
+use rusoto_core::Region;
+
 /// This tool does bulk operations against sub-components in a cluster. Use with great care.
 #[derive(Debug, StructOpt)]
 pub struct Args {
     /// AWS profile for authentication
     #[structopt(long = "profile")]
     pub profile: Option<String>,
-    /// AWS region of cluster
-    #[structopt(long = "region")]
-    pub region: String,
     /// Sets the level of verbosity
     #[structopt(short = "v", long = "verbose", parse(from_occurrences), raw(global = "true"))]
     pub verbosity: usize,
@@ -30,21 +29,25 @@ pub enum EcsCommand {
 pub enum ServicesCommand {
     /// Useful information about services
     #[structopt(name = "info")]
-    Info { cluster: String },
+    Info { cluster: String, region: Region },
     /// Services that have issues (mainly null-references)
     #[structopt(name = "audit")]
-    Audit { cluster: String },
+    Audit { cluster: String, region: Region },
     /// List services that are in source_cluster, but not in destination cluster (by name)
     #[structopt(name = "compare")]
     Compare {
         source_cluster: String,
+        source_region: Region,
         destination_cluster: String,
+        destination_region: Region,
     },
     /// Deploy healthy services in source_cluster into destination_cluster
     #[structopt(name = "sync")]
     Sync {
         source_cluster: String,
+        source_region: Region,
         destination_cluster: String,
+        destination_region: Region,
         /// The role to use for new services is '${destination_cluster}-${role_suffix}'
         role_suffix: Option<String>,
     },
@@ -52,6 +55,7 @@ pub enum ServicesCommand {
     #[structopt(name = "update")]
     Update {
         cluster: String,
+        region: Region,
         #[structopt(flatten)]
         modification: ServiceModification,
     },
