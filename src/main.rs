@@ -47,7 +47,6 @@ fn main() -> Result<(), Error> {
         match args.profile {
             Some(profile) => ChainProvider::with_profile_provider(&core.handle(), {
                 let mut p = ProfileProvider::new()?;
-                debug!("Setting profile to {}", profile);
                 p.set_profile(profile);
                 p
             }),
