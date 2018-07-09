@@ -33,7 +33,7 @@ pub enum ServicesCommand {
         /// The cluster name
         cluster: String,
         /// The AWS region
-        region: Region
+        region: Region,
     },
     /// Services that have issues (mainly null-references)
     #[structopt(name = "audit")]
@@ -41,7 +41,7 @@ pub enum ServicesCommand {
         /// The cluster name
         cluster: String,
         /// The AWS region
-        region: Region
+        region: Region,
     },
     /// List services that are in source_cluster, but not in destination cluster (by name)
     #[structopt(name = "compare")]
@@ -75,7 +75,7 @@ pub enum ServicesCommand {
         /// The cluster name
         cluster: String,
         /// The AWS region
-        region: Region
+        region: Region,
         #[structopt(flatten)]
         modification: ServiceModification,
     },
