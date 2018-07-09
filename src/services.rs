@@ -22,13 +22,14 @@ pub fn service_name(service: &Service) -> Result<String, Error> {
     }
 }
 
-pub fn compare_services<P: ProvideAwsCredentials + 'static>(
-    ecs_client: &EcsClient<P, RequestDispatcher>,
+pub fn compare_services<P: ProvideAwsCredentials + 'static, Q: ProvideAwsCredentials + 'static>(
+    source_ecs_client: &EcsClient<P, RequestDispatcher>,
     source_cluster: String,
+    destination_ecs_client: &EcsClient<Q, RequestDispatcher>,
     destination_cluster: String,
 ) -> Result<Vec<Service>, Error> {
-    let source_services = describe_services(&ecs_client, source_cluster)?;
-    let destination_services = describe_services(&ecs_client, destination_cluster)?;
+    let source_services = describe_services(&source_ecs_client, source_cluster)?;
+    let destination_services = describe_services(&destination_ecs_client, destination_cluster)?;
 
     let destination_names = destination_services
         .into_iter()

@@ -20,15 +20,9 @@ mod helpers;
 mod services;
 
 use failure::Error;
-use rusoto_core::reactor::RequestDispatcher;
-use rusoto_core::{ChainProvider, ProfileProvider};
-use rusoto_ecr::EcrClient;
-use rusoto_ecs::EcsClient;
-use rusoto_elbv2::ElbClient;
 use std::thread;
 use std::time::Duration;
 use structopt::StructOpt;
-use tokio_core::reactor::Core;
 
 use args::Args;
 use args::EcsCommand::*;
@@ -42,40 +36,11 @@ fn main() -> Result<(), Error> {
         .verbosity(args.verbosity + 2)
         .init()?;
 
-    let credentials_provider = {
-        let core = Core::new()?;
-        match args.profile {
-            Some(profile) => ChainProvider::with_profile_provider(&core.handle(), {
-                let mut p = ProfileProvider::new()?;
-                p.set_profile(profile);
-                p
-            }),
-            None => ChainProvider::new(&core.handle()),
-        }
-    };
-
-    let ecs_client = EcsClient::new(
-        RequestDispatcher::default(),
-        credentials_provider.clone(),
-        args.region.parse()?,
-    );
-
-    let ecr_client = EcrClient::new(
-        RequestDispatcher::default(),
-        credentials_provider.clone(),
-        args.region.parse()?,
-    );
-
-    let elb_client = ElbClient::new(
-        RequestDispatcher::default(),
-        credentials_provider.clone(),
-        args.region.parse()?,
-    );
-
     match args.command {
         ServicesCommand {
-            command: Info { cluster },
+            command: Info { cluster, region },
         } => {
+            let ecs_client = helpers::ecs_client(args.profile, region)?;
             for service in services::describe_services(&ecs_client, cluster.clone())? {
                 let service_name = services::service_name(&service)?;
 
@@ -94,28 +59,39 @@ fn main() -> Result<(), Error> {
             }
         }
         ServicesCommand {
-            command: Audit { cluster },
-        } => for service in services::describe_services(&ecs_client, cluster)? {
-            let service_name = services::service_name(&service)?;
+            command: Audit { cluster, region },
+        } => {
+            let ecs_client = helpers::ecs_client(args.profile.clone(), region.clone())?;
+            let ecr_client = helpers::ecr_client(args.profile.clone(), region.clone())?;
+            let elb_client = helpers::elb_client(args.profile, region)?;
+            for service in services::describe_services(&ecs_client, cluster)? {
+                let service_name = services::service_name(&service)?;
 
-            let audit_message =
-                services::audit_service(&ecs_client, &ecr_client, &elb_client, &service)?
-                    .join(", ");
+                let audit_message =
+                    services::audit_service(&ecs_client, &ecr_client, &elb_client, &service)?
+                        .join(", ");
 
-            if !audit_message.is_empty() {
-                println!("{} [{}]", service_name, audit_message);
+                if !audit_message.is_empty() {
+                    println!("{} [{}]", service_name, audit_message);
+                }
             }
-        },
+        }
         ServicesCommand {
             command:
                 Compare {
                     source_cluster,
+                    source_region,
                     destination_cluster,
+                    destination_region,
                 },
         } => {
+            let destination_ecs_client =
+                helpers::ecs_client(args.profile.clone(), destination_region)?;
+            let source_ecs_client = helpers::ecs_client(args.profile.clone(), source_region)?;
             let source_only_services = services::compare_services(
-                &ecs_client,
+                &source_ecs_client,
                 source_cluster.clone(),
+                &destination_ecs_client,
                 destination_cluster,
             )?;
 
@@ -130,24 +106,38 @@ fn main() -> Result<(), Error> {
             command:
                 Sync {
                     source_cluster,
+                    source_region,
                     destination_cluster,
+                    destination_region,
                     role_suffix,
                 },
         } => {
+            let destination_ecs_client =
+                helpers::ecs_client(args.profile.clone(), destination_region)?;
+            let source_ecs_client =
+                helpers::ecs_client(args.profile.clone(), source_region.clone())?;
+            let source_ecr_client =
+                helpers::ecr_client(args.profile.clone(), source_region.clone())?;
+            let source_elb_client = helpers::elb_client(args.profile, source_region.clone())?;
             let source_only_services = services::compare_services(
-                &ecs_client,
+                &source_ecs_client,
                 source_cluster.clone(),
+                &destination_ecs_client,
                 destination_cluster.clone(),
             )?;
 
             for source_service in source_only_services {
-                if services::audit_service(&ecs_client, &ecr_client, &elb_client, &source_service)?
-                    .is_empty()
+                if services::audit_service(
+                    &source_ecs_client,
+                    &source_ecr_client,
+                    &source_elb_client,
+                    &source_service,
+                )?.is_empty()
                 {
                     thread::sleep(Duration::from_millis(10000));
 
                     services::create_service(
-                        &ecs_client,
+                        &destination_ecs_client,
                         destination_cluster.clone(),
                         source_service,
                         role_suffix.clone(),
@@ -156,18 +146,23 @@ fn main() -> Result<(), Error> {
             }
         }
         ServicesCommand {
-            command: Update {
-                cluster,
-                modification,
-            },
-        } => for service in services::describe_services(&ecs_client, cluster.clone())? {
-            services::update_service(
-                &ecs_client,
-                cluster.clone(),
-                service.clone(),
-                modification.clone(),
-            )?;
-        },
+            command:
+                Update {
+                    cluster,
+                    region,
+                    modification,
+                },
+        } => {
+            let ecs_client = helpers::ecs_client(args.profile, region)?;
+            for service in services::describe_services(&ecs_client, cluster.clone())? {
+                services::update_service(
+                    &ecs_client,
+                    cluster.clone(),
+                    service.clone(),
+                    modification.clone(),
+                )?;
+            }
+        }
     }
 
     Ok(())
