@@ -29,24 +29,42 @@ pub enum EcsCommand {
 pub enum ServicesCommand {
     /// Useful information about services
     #[structopt(name = "info")]
-    Info { cluster: String, region: Region },
+    Info {
+        /// The cluster name
+        cluster: String,
+        /// The AWS region
+        region: Region
+    },
     /// Services that have issues (mainly null-references)
     #[structopt(name = "audit")]
-    Audit { cluster: String, region: Region },
+    Audit {
+        /// The cluster name
+        cluster: String,
+        /// The AWS region
+        region: Region
+    },
     /// List services that are in source_cluster, but not in destination cluster (by name)
     #[structopt(name = "compare")]
     Compare {
+        /// The source cluster name
         source_cluster: String,
+        /// The source AWS region
         source_region: Region,
+        /// The destination cluster name
         destination_cluster: String,
+        /// The destination AWS region
         destination_region: Region,
     },
     /// Deploy healthy services in source_cluster into destination_cluster
     #[structopt(name = "sync")]
     Sync {
+        /// The source cluster name
         source_cluster: String,
+        /// The source AWS region
         source_region: Region,
+        /// The destination cluster name
         destination_cluster: String,
+        /// The destination AWS region
         destination_region: Region,
         /// The role to use for new services is '${destination_cluster}-${role_suffix}'
         role_suffix: Option<String>,
@@ -54,8 +72,10 @@ pub enum ServicesCommand {
     /// Make changes to services
     #[structopt(name = "update")]
     Update {
+        /// The cluster name
         cluster: String,
-        region: Region,
+        /// The AWS region
+        region: Region
         #[structopt(flatten)]
         modification: ServiceModification,
     },
