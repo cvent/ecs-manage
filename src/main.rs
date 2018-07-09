@@ -15,11 +15,8 @@ extern crate log;
 extern crate stderrlog;
 #[macro_use]
 extern crate maplit;
-extern crate glob;
 extern crate itertools;
 extern crate serde;
-#[macro_use]
-extern crate serde_derive;
 extern crate serde_json;
 
 mod args;
