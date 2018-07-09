@@ -1,4 +1,6 @@
 #[macro_use]
+extern crate clap;
+#[macro_use]
 extern crate structopt;
 extern crate rusoto_core;
 extern crate rusoto_ecr;
@@ -13,19 +15,29 @@ extern crate log;
 extern crate stderrlog;
 #[macro_use]
 extern crate maplit;
+extern crate glob;
 extern crate itertools;
+extern crate serde;
+#[macro_use]
+extern crate serde_derive;
+extern crate serde_json;
 
 mod args;
 mod helpers;
 mod services;
 
 use failure::Error;
+use serde_json::Number as JsonNumber;
+use serde_json::Value;
+use serde_json::Value::Number;
+use std::collections::HashMap;
 use std::thread;
 use std::time::Duration;
 use structopt::StructOpt;
 
 use args::Args;
 use args::EcsCommand::*;
+use args::ServiceProperty;
 use args::ServicesCommand::*;
 
 fn main() -> Result<(), Error> {
@@ -35,6 +47,8 @@ fn main() -> Result<(), Error> {
         .module(module_path!())
         .verbosity(args.verbosity + 2)
         .init()?;
+
+    trace!("Args: {:?}", args);
 
     match args.command {
         ServicesCommand {
@@ -144,6 +158,32 @@ fn main() -> Result<(), Error> {
                     )?;
                 }
             }
+        }
+        ServicesCommand {
+            command:
+                Export {
+                    cluster,
+                    region,
+                    property,
+                },
+        } => {
+            let ecs_client = helpers::ecs_client(args.profile, region)?;
+
+            let service_properties = services::describe_services(&ecs_client, cluster.clone())?
+                .into_iter()
+                .map(|s| {
+                    let property_value = match property {
+                        ServiceProperty::DesiredCount => s.desired_count,
+                    };
+
+                    Ok((
+                        services::service_name(&s)?,
+                        Number(JsonNumber::from(property_value.unwrap())),
+                    ))
+                })
+                .collect::<Result<HashMap<String, Value>, Error>>()?;
+
+            println!("{}", serde_json::to_string_pretty(&service_properties)?);
         }
         ServicesCommand {
             command:
