@@ -12,7 +12,7 @@ use rusoto_elbv2::{
     DescribeTargetGroupsError, DescribeTargetGroupsInput, Elb, ElbClient, TargetGroup,
 };
 
-use args::ServiceModification;
+use args::*;
 use helpers;
 
 pub fn service_name(service: &Service) -> Result<String, Error> {
@@ -222,25 +222,32 @@ pub fn update_service<P: ProvideAwsCredentials + 'static>(
         task_definition: None,
     };
 
-    let req = match modification {
+    let (req, summary) = match modification {
         ServiceModification::DesiredCount { count } => {
+            let count = match count {
+                DesiredCountOptions::Number(count) => Some(count),
+                DesiredCountOptions::Map(map) => map.get(&service_name).map(|c| c.clone()),
+            };
+
+            let summary = format!("desired count to {:?}", count);
+
             println!(
-                "Updating {}/{}'s desired count to {}. It was {:?}",
-                cluster, service_name, count, service.desired_count
+                "Updating {}/{}'s {}. It was {:?}",
+                cluster, service_name, summary, service.desired_count
             );
 
-            UpdateServiceRequest {
-                desired_count: Some(count),
-                ..template_req
-            }
+            (
+                UpdateServiceRequest {
+                    desired_count: count,
+                    ..template_req
+                },
+                summary,
+            )
         }
     };
 
     helpers::retry_log(
-        format!(
-            "Updating {}/{} to {:?}",
-            cluster, service_name, modification
-        ),
+        format!("Updating {}/{}'s {}", cluster, service_name, summary),
         || {
             ecs_client.update_service(&req).sync().map_err(|e| match e {
                 UpdateServiceError::Unknown(s) => {

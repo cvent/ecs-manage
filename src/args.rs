@@ -1,4 +1,10 @@
+use failure::Error;
 use rusoto_core::Region;
+use serde_json;
+use std::str::FromStr;
+
+use std::collections::HashMap;
+use std::fs::File;
 
 /// This tool does bulk operations against sub-components in a cluster. Use with great care.
 #[derive(Debug, StructOpt)]
@@ -7,7 +13,12 @@ pub struct Args {
     #[structopt(long = "profile")]
     pub profile: Option<String>,
     /// Sets the level of verbosity
-    #[structopt(short = "v", long = "verbose", parse(from_occurrences), raw(global = "true"))]
+    #[structopt(
+        short = "v",
+        long = "verbose",
+        parse(from_occurrences),
+        raw(global = "true")
+    )]
     pub verbosity: usize,
     /// Sub commands
     #[structopt(subcommand)]
@@ -69,6 +80,21 @@ pub enum ServicesCommand {
         /// The role to use for new services is '${destination_cluster}-${role_suffix}'
         role_suffix: Option<String>,
     },
+    /// Export properties of services in a format that `update` understands
+    #[structopt(name = "export")]
+    Export {
+        /// The cluster name
+        cluster: String,
+        /// The AWS region
+        region: Region,
+        #[structopt(
+            raw(
+                possible_values = "&ServiceProperty::variants()",
+                case_insensitive = "true"
+            )
+        )]
+        property: ServiceProperty,
+    },
     /// Make changes to services
     #[structopt(name = "update")]
     Update {
@@ -81,8 +107,39 @@ pub enum ServicesCommand {
     },
 }
 
+arg_enum!{
+    #[derive(Debug)]
+    pub enum ServiceProperty {
+        DesiredCount,
+    }
+}
+
 #[derive(Debug, StructOpt, Clone)]
 pub enum ServiceModification {
     #[structopt(name = "desired-count")]
-    DesiredCount { count: i64 },
+    DesiredCount {
+        /// Either an integer to set desired count for all services,
+        /// or a path to a JSON file containing a service name -> desired count mapping
+        count: DesiredCountOptions,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub enum DesiredCountOptions {
+    Number(i64),
+    Map(HashMap<String, i64>),
+}
+
+impl FromStr for DesiredCountOptions {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Ok(count) = s.parse::<i64>() {
+            Ok(DesiredCountOptions::Number(count))
+        } else {
+            Ok(DesiredCountOptions::Map(serde_json::from_reader(
+                File::open(s)?,
+            )?))
+        }
+    }
 }
