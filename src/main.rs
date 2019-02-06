@@ -143,7 +143,8 @@ fn main() -> Result<(), Error> {
                     &source_ecr_client,
                     &source_elb_client,
                     &source_service,
-                )?.is_empty()
+                )?
+                .is_empty()
                 {
                     thread::sleep(Duration::from_millis(10000));
 
@@ -188,6 +189,7 @@ fn main() -> Result<(), Error> {
                     cluster,
                     region,
                     modification,
+                    sleep,
                 },
         } => {
             let ecs_client = helpers::ecs_client(args.profile, region)?;
@@ -198,6 +200,8 @@ fn main() -> Result<(), Error> {
                     service.clone(),
                     modification.clone(),
                 )?;
+
+                thread::sleep(Duration::from_millis(sleep));
             }
         }
     }

@@ -87,12 +87,10 @@ pub enum ServicesCommand {
         cluster: String,
         /// The AWS region
         region: Region,
-        #[structopt(
-            raw(
-                possible_values = "&ServiceProperty::variants()",
-                case_insensitive = "true"
-            )
-        )]
+        #[structopt(raw(
+            possible_values = "&ServiceProperty::variants()",
+            case_insensitive = "true"
+        ))]
         property: ServiceProperty,
     },
     /// Make changes to services
@@ -104,10 +102,13 @@ pub enum ServicesCommand {
         region: Region,
         #[structopt(flatten)]
         modification: ServiceModification,
+        /// Sleep between each service this many milliseconds
+        #[structopt(long = "sleep", default_value = "0")]
+        sleep: u64,
     },
 }
 
-arg_enum!{
+arg_enum! {
     #[derive(Debug)]
     pub enum ServiceProperty {
         DesiredCount,
