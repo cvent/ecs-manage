@@ -335,7 +335,7 @@ pub fn service_ecr_images<P: ProvideAwsCredentials + 'static>(
                                                 }),
                                             };
 
-                                            let mut image_details_res = ecr_client
+                                            let image_details_res = ecr_client
                                                 .describe_images(&DescribeImagesRequest {
                                                     filter: None,
                                                     image_ids: Some(vec![image_id]),

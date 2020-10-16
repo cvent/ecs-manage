@@ -9,22 +9,9 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Creates a dummy project used to grab dependencies
-RUN USER=root cargo init --bin
-
-# Copies over *only* your manifests
-COPY ./Cargo.* ./
-
-# Builds your dependencies and removes the fake source code from the dummy project
-RUN cargo build --release
-RUN rm src/*.rs
-RUN rm target/x86_64-unknown-linux-musl/release/ecs-manage
-
-# Copies only your actual source code to avoid invalidating the cache at all
-COPY ./src ./src
-
-# Builds again, this time it'll just be your actual source files being built
-RUN cargo build --release
+# Build
+COPY . .
+RUN cargo install --target x86_64-unknown-linux-musl --path .
 
 FROM alpine:latest as certs
 RUN apk --no-cache add ca-certificates
@@ -38,7 +25,10 @@ ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
 # Copies the binary from the "build" stage
-COPY --from=build /app/target/x86_64-unknown-linux-musl/release/ecs-manage /bin/
+COPY --from=build /root/.cargo/bin/ecs-manage /bin/
+
+# Smoke test
+RUN test "$(/bin/ecs-manage --version)" == 'ecs-manage 0.1.1'
 
 # Configures the startup!
 ENTRYPOINT ["/bin/ecs-manage"]
