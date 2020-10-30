@@ -3,13 +3,13 @@ extern crate clap;
 #[macro_use]
 extern crate structopt;
 extern crate rusoto_core;
+extern crate rusoto_credential;
 extern crate rusoto_ecr;
 extern crate rusoto_ecs;
 extern crate rusoto_elbv2;
 #[macro_use]
 extern crate failure;
 extern crate backoff;
-extern crate tokio_core;
 #[macro_use]
 extern crate log;
 extern crate stderrlog;

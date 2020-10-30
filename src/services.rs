@@ -1,7 +1,5 @@
 use backoff;
 use failure::Error;
-use rusoto_core::reactor::RequestDispatcher;
-use rusoto_core::ProvideAwsCredentials;
 use rusoto_ecr::{DescribeImagesRequest, Ecr, EcrClient, ImageDetail, ImageIdentifier};
 use rusoto_ecs::{
     CreateServiceRequest, DescribeServicesError, DescribeServicesRequest,
@@ -22,10 +20,10 @@ pub fn service_name(service: &Service) -> Result<String, Error> {
     }
 }
 
-pub fn compare_services<P: ProvideAwsCredentials + 'static, Q: ProvideAwsCredentials + 'static>(
-    source_ecs_client: &EcsClient<P, RequestDispatcher>,
+pub fn compare_services(
+    source_ecs_client: &EcsClient,
     source_cluster: String,
-    destination_ecs_client: &EcsClient<Q, RequestDispatcher>,
+    destination_ecs_client: &EcsClient,
     destination_cluster: String,
 ) -> Result<Vec<Service>, Error> {
     let source_services = describe_services(&source_ecs_client, source_cluster)?;
@@ -42,8 +40,8 @@ pub fn compare_services<P: ProvideAwsCredentials + 'static, Q: ProvideAwsCredent
         .collect::<Vec<Service>>())
 }
 
-pub fn list_services<P: ProvideAwsCredentials + 'static>(
-    ecs_client: &EcsClient<P, RequestDispatcher>,
+pub fn list_services(
+    ecs_client: &EcsClient,
     cluster: String,
 ) -> Result<Vec<String>, Error> {
     let mut token = Some(String::new());
@@ -53,7 +51,7 @@ pub fn list_services<P: ProvideAwsCredentials + 'static>(
     while token.is_some() {
         let res = helpers::retry_log(format!("listing services in {}", cluster), || {
             ecs_client
-                .list_services(&ListServicesRequest {
+                .list_services(ListServicesRequest {
                     cluster: Some(cluster.clone()),
                     launch_type: None,
                     max_results: None,
@@ -81,14 +79,14 @@ pub fn list_services<P: ProvideAwsCredentials + 'static>(
     Ok(services)
 }
 
-pub fn describe_service<P: ProvideAwsCredentials + 'static>(
-    ecs_client: &EcsClient<P, RequestDispatcher>,
+pub fn describe_service(
+    ecs_client: &EcsClient,
     cluster: String,
     service: String,
 ) -> Result<Service, Error> {
     let res = helpers::retry_log(format!("Describing {}/{}", cluster, service), || {
         ecs_client
-            .describe_services(&DescribeServicesRequest {
+            .describe_services(DescribeServicesRequest {
                 cluster: Some(cluster.clone()),
                 services: vec![service.clone()],
             })
@@ -117,8 +115,8 @@ pub fn describe_service<P: ProvideAwsCredentials + 'static>(
     }
 }
 
-pub fn describe_services<P: ProvideAwsCredentials + 'static>(
-    ecs_client: &EcsClient<P, RequestDispatcher>,
+pub fn describe_services(
+    ecs_client: &EcsClient,
     cluster: String,
 ) -> Result<Vec<Service>, Error> {
     list_services(&ecs_client, cluster.clone())?
@@ -127,8 +125,8 @@ pub fn describe_services<P: ProvideAwsCredentials + 'static>(
         .collect()
 }
 
-pub fn create_service<P: ProvideAwsCredentials + 'static>(
-    ecs_client: &EcsClient<P, RequestDispatcher>,
+pub fn create_service(
+    ecs_client: &EcsClient,
     cluster: String,
     from_service: Service,
     role_suffix: Option<String>,
@@ -170,7 +168,7 @@ pub fn create_service<P: ProvideAwsCredentials + 'static>(
     ))?;
 
     let response = ecs_client
-        .create_service(&CreateServiceRequest {
+        .create_service(CreateServiceRequest {
             client_token: None,
             cluster: Some(cluster.clone()),
             deployment_configuration: from_service.deployment_configuration.clone(),
@@ -185,6 +183,7 @@ pub fn create_service<P: ProvideAwsCredentials + 'static>(
             role: role.clone(),
             service_name: service_name.clone(),
             task_definition: task_definition.clone(),
+            service_registries: None
         })
         .sync();
 
@@ -202,8 +201,8 @@ pub fn create_service<P: ProvideAwsCredentials + 'static>(
     }
 }
 
-pub fn update_service<P: ProvideAwsCredentials + 'static>(
-    ecs_client: &EcsClient<P, RequestDispatcher>,
+pub fn update_service(
+    ecs_client: &EcsClient,
     cluster: String,
     service: Service,
     modification: ServiceModification,
@@ -249,7 +248,7 @@ pub fn update_service<P: ProvideAwsCredentials + 'static>(
     helpers::retry_log(
         format!("Updating {}/{}'s {}", cluster, service_name, summary),
         || {
-            ecs_client.update_service(&req).sync().map_err(|e| match e {
+            ecs_client.update_service(req.clone()).sync().map_err(|e| match e {
                 UpdateServiceError::Unknown(s) => {
                     if s == r#"{"__type":"ThrottlingException","message":"Rate exceeded"}"# {
                         backoff::Error::Transient(UpdateServiceError::Unknown(s))
@@ -264,10 +263,10 @@ pub fn update_service<P: ProvideAwsCredentials + 'static>(
         .ok_or(format_err!("Tried to update service, but nothing returned"))
 }
 
-pub fn audit_service<P: ProvideAwsCredentials + 'static>(
-    ecs_client: &EcsClient<P, RequestDispatcher>,
-    ecr_client: &EcrClient<P, RequestDispatcher>,
-    elb_client: &ElbClient<P, RequestDispatcher>,
+pub fn audit_service(
+    ecs_client: &EcsClient,
+    ecr_client: &EcrClient,
+    elb_client: &ElbClient,
     service: &Service,
 ) -> Result<Vec<String>, Error> {
     let audit = hashmap![
@@ -283,9 +282,9 @@ pub fn audit_service<P: ProvideAwsCredentials + 'static>(
         .collect::<Vec<String>>())
 }
 
-pub fn service_ecr_images<P: ProvideAwsCredentials + 'static>(
-    ecs_client: &EcsClient<P, RequestDispatcher>,
-    ecr_client: &EcrClient<P, RequestDispatcher>,
+pub fn service_ecr_images(
+    ecs_client: &EcsClient,
+    ecr_client: &EcrClient,
     service: &Service,
 ) -> Result<Vec<Result<ImageDetail, Error>>, Error> {
     match service.task_definition {
@@ -293,7 +292,7 @@ pub fn service_ecr_images<P: ProvideAwsCredentials + 'static>(
             let task_definition =
                 helpers::retry_log(format!("describing {}", task_definition), || {
                     ecs_client
-                        .describe_task_definition(&DescribeTaskDefinitionRequest {
+                        .describe_task_definition(DescribeTaskDefinitionRequest {
                             task_definition: task_definition.clone(),
                         })
                         .sync()
@@ -336,7 +335,7 @@ pub fn service_ecr_images<P: ProvideAwsCredentials + 'static>(
                                             };
 
                                             let image_details_res = ecr_client
-                                                .describe_images(&DescribeImagesRequest {
+                                                .describe_images(DescribeImagesRequest {
                                                     filter: None,
                                                     image_ids: Some(vec![image_id]),
                                                     max_results: None,
@@ -382,8 +381,8 @@ pub fn service_ecr_images<P: ProvideAwsCredentials + 'static>(
     }
 }
 
-pub fn service_target_groups<P: ProvideAwsCredentials + 'static>(
-    elb_client: &ElbClient<P, RequestDispatcher>,
+pub fn service_target_groups(
+    elb_client: &ElbClient,
     service: &Service,
 ) -> Result<Vec<Result<TargetGroup, Error>>, Error> {
     match service.load_balancers {
@@ -396,7 +395,7 @@ pub fn service_target_groups<P: ProvideAwsCredentials + 'static>(
                         let target_groups_res =
                             helpers::retry_log(format!("describing {}", target_group_arn), || {
                                 elb_client
-                                    .describe_target_groups(&DescribeTargetGroupsInput {
+                                    .describe_target_groups(DescribeTargetGroupsInput {
                                         load_balancer_arn: None,
                                         marker: None,
                                         names: None,
