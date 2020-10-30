@@ -16,7 +16,7 @@ SHELL ["/bin/bash", "-c"]
 COPY --from=build /app/target/release/ecs-manage /bin/
 
 # Smoke test
-RUN test "$(/bin/ecs-manage --version)" == 'ecs-manage 0.1.1'
+RUN test "$(/bin/ecs-manage --version)" == 'ecs-manage 0.1.2'
 
 # Configures the startup!
 ENTRYPOINT ["/bin/ecs-manage"]

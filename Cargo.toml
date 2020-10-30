@@ -1,6 +1,6 @@
 [package]
 name = "ecs-manage"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Jonathan Morley <jmorley@cvent.com>"]
 
 [dependencies]
