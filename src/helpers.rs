@@ -31,10 +31,7 @@ pub fn credentials_provider(profile: Option<String>) -> Result<ChainProvider, Er
     }
 }
 
-pub fn ecs_client(
-    profile: Option<String>,
-    region: Region,
-) -> Result<EcsClient, Error> {
+pub fn ecs_client(profile: Option<String>, region: Region) -> Result<EcsClient, Error> {
     Ok(EcsClient::new_with(
         HttpClient::new()?,
         credentials_provider(profile)?,
@@ -42,10 +39,7 @@ pub fn ecs_client(
     ))
 }
 
-pub fn elb_client(
-    profile: Option<String>,
-    region: Region,
-) -> Result<ElbClient, Error> {
+pub fn elb_client(profile: Option<String>, region: Region) -> Result<ElbClient, Error> {
     Ok(ElbClient::new_with(
         HttpClient::new()?,
         credentials_provider(profile)?,
@@ -53,10 +47,7 @@ pub fn elb_client(
     ))
 }
 
-pub fn ecr_client(
-    profile: Option<String>,
-    region: Region,
-) -> Result<EcrClient, Error> {
+pub fn ecr_client(profile: Option<String>, region: Region) -> Result<EcrClient, Error> {
     Ok(EcrClient::new_with(
         HttpClient::new()?,
         credentials_provider(profile)?,

@@ -40,10 +40,7 @@ pub fn compare_services(
         .collect::<Vec<Service>>())
 }
 
-pub fn list_services(
-    ecs_client: &EcsClient,
-    cluster: String,
-) -> Result<Vec<String>, Error> {
+pub fn list_services(ecs_client: &EcsClient, cluster: String) -> Result<Vec<String>, Error> {
     let mut token = Some(String::new());
 
     let mut services = Vec::new();
@@ -115,10 +112,7 @@ pub fn describe_service(
     }
 }
 
-pub fn describe_services(
-    ecs_client: &EcsClient,
-    cluster: String,
-) -> Result<Vec<Service>, Error> {
+pub fn describe_services(ecs_client: &EcsClient, cluster: String) -> Result<Vec<Service>, Error> {
     list_services(&ecs_client, cluster.clone())?
         .into_iter()
         .map(|service| describe_service(&ecs_client, cluster.clone(), service))
@@ -183,7 +177,7 @@ pub fn create_service(
             role: role.clone(),
             service_name: service_name.clone(),
             task_definition: task_definition.clone(),
-            service_registries: None
+            service_registries: None,
         })
         .sync();
 
@@ -248,19 +242,23 @@ pub fn update_service(
     helpers::retry_log(
         format!("Updating {}/{}'s {}", cluster, service_name, summary),
         || {
-            ecs_client.update_service(req.clone()).sync().map_err(|e| match e {
-                UpdateServiceError::Unknown(s) => {
-                    if s == r#"{"__type":"ThrottlingException","message":"Rate exceeded"}"# {
-                        backoff::Error::Transient(UpdateServiceError::Unknown(s))
-                    } else {
-                        backoff::Error::Permanent(UpdateServiceError::Unknown(s))
+            ecs_client
+                .update_service(req.clone())
+                .sync()
+                .map_err(|e| match e {
+                    UpdateServiceError::Unknown(s) => {
+                        if s == r#"{"__type":"ThrottlingException","message":"Rate exceeded"}"# {
+                            backoff::Error::Transient(UpdateServiceError::Unknown(s))
+                        } else {
+                            backoff::Error::Permanent(UpdateServiceError::Unknown(s))
+                        }
                     }
-                }
-                _ => backoff::Error::Permanent(e),
-            })
+                    _ => backoff::Error::Permanent(e),
+                })
         },
-    )?.service
-        .ok_or(format_err!("Tried to update service, but nothing returned"))
+    )?
+    .service
+    .ok_or(format_err!("Tried to update service, but nothing returned"))
 }
 
 pub fn audit_service(
@@ -305,7 +303,8 @@ pub fn service_ecr_images(
                             },
                             _ => backoff::Error::Permanent(e),
                         })
-                })?.task_definition;
+                })?
+                .task_definition;
 
             match task_definition {
                 Some(task_definition) => match task_definition.container_definitions {
