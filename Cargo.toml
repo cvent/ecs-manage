@@ -5,7 +5,7 @@ authors = ["Jonathan Morley <jmorley@cvent.com>"]
 
 [dependencies]
 structopt = "0.2.10"
-rusoto_core = "0.34.0"
+rusoto_core = "0.48.0"
 rusoto_credential = "0.13.0"
 rusoto_ecr = "0.34.0"
 rusoto_ecs = "0.34.0"
